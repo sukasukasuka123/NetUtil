@@ -12,6 +12,7 @@ func Sha256(data []byte) []byte {
 	return h[:]
 }
 
+// 这是一个sha1 的方法
 func Sha1(data []byte) []byte {
 	h := sha1.Sum(data)
 	return h[:]
