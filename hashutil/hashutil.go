@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 )
 
+// 这个是sha256的一个哈希方法
 func Sha256(data []byte) []byte {
 	h := sha256.Sum256(data)
 	return h[:]
