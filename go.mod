@@ -1,4 +1,4 @@
-module NetUtil
+module github.com/sukasukasuka123/NetUtil
 
 go 1.24.0
 
