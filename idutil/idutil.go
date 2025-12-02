@@ -1,10 +1,11 @@
 package idutil
 
 import (
-	"NetUtil/hashutil"
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/sukasukasuka123/NetUtil/hashutil"
 )
 
 type ShardManager struct {

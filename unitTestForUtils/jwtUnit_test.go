@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"NetUtil/jwtutil"
+	"github.com/sukasukasuka123/NetUtil/jwtutil"
 )
 
 // 基础：创建一个测试用的 JWTManager

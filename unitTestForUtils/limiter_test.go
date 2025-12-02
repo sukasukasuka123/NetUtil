@@ -1,11 +1,12 @@
 package unitTestForUtils
 
 import (
-	"NetUtil/limiterUtil"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/sukasukasuka123/NetUtil/limiterUtil"
 )
 
 // ---------------------------
