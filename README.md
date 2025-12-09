@@ -132,7 +132,126 @@ func authHandler(w http.ResponseWriter, r *http.Request) {
 
 从 Cookie 中读取 Token。
 
+## 下面是附带 Gin 集成示例的完整段落
+
 ---
+
+## 在 Gin 框架中的使用
+
+`JWTUtil` 可以无缝集成到 Gin 里，用于登录鉴权、中间件校验等典型场景。
+
+### 登录：生成 Token + 写入 Cookie
+
+```go
+package main
+
+import (
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sukasukasuka123/NetUtil/jwtutil"
+)
+
+func main() {
+	r := gin.Default()
+
+	jm := jwtutil.NewJWTManager("my-secret-key", 24*time.Hour, "auth_token")
+
+	r.POST("/login", func(c *gin.Context) {
+		// 模拟用户校验
+		userID := 1001
+
+		token, err := jm.GenerateToken(map[string]interface{}{
+			"user_id": userID,
+			"role":    "admin",
+		})
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to generate token"})
+			return
+		}
+
+		jm.SetTokenCookie(c.Writer, token)
+
+		c.JSON(200, gin.H{
+			"message": "login success",
+		})
+	})
+
+	r.Run(":8080")
+}
+```
+
+---
+
+### Gin 中间件：自动解析 Cookie 中的 Token
+
+下面的中间件会自动：
+
+* 从 Cookie 中读取 token
+* 校验 token
+* 把 claims 注入到 `c.Set("claims", …)` 中
+
+```go
+func AuthMiddleware(jm *jwtutil.JWTManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenStr, err := jm.ReadTokenFromCookie(c.Request)
+		if err != nil {
+			c.AbortWithStatusJSON(401, gin.H{"error": "no token"})
+			return
+		}
+
+		claims, err := jm.ParseToken(tokenStr)
+		if err != nil {
+			c.AbortWithStatusJSON(401, gin.H{"error": "invalid token"})
+			return
+		}
+
+		// 注入上下文
+		c.Set("claims", claims)
+
+		c.Next()
+	}
+}
+```
+
+---
+
+### 使用中间件保护路由
+
+```go
+func main() {
+	r := gin.Default()
+	jm := jwtutil.NewJWTManager("my-secret-key", 24*time.Hour, "auth_token")
+
+	auth := r.Group("/user")
+	auth.Use(AuthMiddleware(jm))
+	{
+		auth.GET("/profile", func(c *gin.Context) {
+			claims := c.MustGet("claims").(map[string]interface{})
+			c.JSON(200, gin.H{
+				"user_id": claims["user_id"],
+				"role":    claims["role"],
+			})
+		})
+	}
+
+	r.Run(":8080")
+}
+```
+
+---
+
+### 如何在业务中使用 Claims？
+
+Gin 的 `c.Set()` 可以传递任意内容，你只要取出即可：
+
+```go
+claims := c.MustGet("claims").(map[string]interface{})
+userID := int(claims["user_id"].(float64))
+```
+
+JWT 的数字类型默认解析为 `float64`，这属于标准库行为，不是 bug。
+
 
 ## 使用建议
 
