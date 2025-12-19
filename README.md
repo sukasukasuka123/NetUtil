@@ -1,4 +1,266 @@
 
+
+# JWTUtil
+
+`JWTUtil` 是一个基于 Go 的轻量级 JWT 工具库，用于简化 **令牌生成、解析、Cookie 存储与读取** 的开发流程。适用于用户认证、Session 维护、前后端分离登录系统等场景。
+
+---
+
+## 特性
+
+* 封装 JWT 的生成与解析流程
+* 支持自定义过期时间
+* 自动写入 HttpOnly Cookie
+* 从 Cookie 读取 JWT
+* 基于 `HS256` 的对称加密
+* 零依赖复杂结构，简单易集成到任意项目
+
+---
+
+## 安装
+
+```bash
+go get github.com/sukasukasuka123/NetUtil/jwtutil
+```
+
+在代码中引入：
+
+```go
+import "github.com/sukasukasuka123/NetUtil/jwtutil"
+```
+
+---
+
+## 核心结构
+
+`JWTManager` 提供完整的 Token 生成、解析、Cookie 读写功能：
+
+```go
+type JWTManager struct {
+    Secret        []byte
+    TokenDuration time.Duration
+    CookieName    string
+}
+```
+
+三个核心参数：
+
+* **Secret**：签名密钥
+* **TokenDuration**：令牌有效期
+* **CookieName**：保存到浏览器时使用的 Cookie 名
+
+---
+
+## 使用示例
+
+下面示例展示如何在登录时签发 Token、写入 Cookie，并在后续请求中读取和校验 Token。
+
+### 生成 Token 并写入 Cookie
+
+```go
+package main
+
+import (
+	"net/http"
+	"time"
+
+	"github.com/sukasukasuka123/NetUtil/jwtutil"
+)
+
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	jm := jwtutil.NewJWTManager("my-secret-key", 24*time.Hour, "auth_token")
+
+	claims := map[string]interface{}{
+		"user_id": 123,
+		"email":   "abc@test.com",
+	}
+
+	token, err := jm.GenerateToken(claims)
+	if err != nil {
+		http.Error(w, "failed to generate token", 500)
+		return
+	}
+
+	// 写入 HttpOnly Cookie
+	jm.SetTokenCookie(w, token)
+
+	w.Write([]byte("login success"))
+}
+```
+
+---
+
+### 从 Cookie 中读取 Token 并解析
+
+```go
+func authHandler(w http.ResponseWriter, r *http.Request) {
+	jm := jwtutil.NewJWTManager("my-secret-key", 24*time.Hour, "auth_token")
+
+	tokenStr, err := jm.ReadTokenFromCookie(r)
+	if err != nil {
+		http.Error(w, "no token", 401)
+		return
+	}
+
+	claims, err := jm.ParseToken(tokenStr)
+	if err != nil {
+		http.Error(w, "invalid token", 401)
+		return
+	}
+
+	w.Write([]byte("welcome user: " + claims["email"].(string)))
+}
+```
+
+---
+
+## 方法说明
+
+### `GenerateToken(claims jwt.MapClaims)`
+
+生成带自定义字段的 Token，会自动写入 `exp`（过期时间）。
+
+### `ParseToken(tokenStr string)`
+
+解析 Token，如果无效或过期会返回错误。
+
+### `SetTokenCookie(w http.ResponseWriter, token string)`
+
+将 Token 写入 HttpOnly Cookie，用于安全储存。
+
+### `ReadTokenFromCookie(r *http.Request)`
+
+从 Cookie 中读取 Token。
+
+## 下面是附带 Gin 集成示例的完整段落
+
+---
+
+## 在 Gin 框架中的使用
+
+`JWTUtil` 可以无缝集成到 Gin 里，用于登录鉴权、中间件校验等典型场景。
+
+### 登录：生成 Token + 写入 Cookie
+
+```go
+package main
+
+import (
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sukasukasuka123/NetUtil/jwtutil"
+)
+
+func main() {
+	r := gin.Default()
+
+	jm := jwtutil.NewJWTManager("my-secret-key", 24*time.Hour, "auth_token")
+
+	r.POST("/login", func(c *gin.Context) {
+		// 模拟用户校验
+		userID := 1001
+
+		token, err := jm.GenerateToken(map[string]interface{}{
+			"user_id": userID,
+			"role":    "admin",
+		})
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to generate token"})
+			return
+		}
+
+		jm.SetTokenCookie(c.Writer, token)
+
+		c.JSON(200, gin.H{
+			"message": "login success",
+		})
+	})
+
+	r.Run(":8080")
+}
+```
+
+---
+
+### Gin 中间件：自动解析 Cookie 中的 Token
+
+下面的中间件会自动：
+
+* 从 Cookie 中读取 token
+* 校验 token
+* 把 claims 注入到 `c.Set("claims", …)` 中
+
+```go
+func AuthMiddleware(jm *jwtutil.JWTManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenStr, err := jm.ReadTokenFromCookie(c.Request)
+		if err != nil {
+			c.AbortWithStatusJSON(401, gin.H{"error": "no token"})
+			return
+		}
+
+		claims, err := jm.ParseToken(tokenStr)
+		if err != nil {
+			c.AbortWithStatusJSON(401, gin.H{"error": "invalid token"})
+			return
+		}
+
+		// 注入上下文
+		c.Set("claims", claims)
+
+		c.Next()
+	}
+}
+```
+
+---
+
+### 使用中间件保护路由
+
+```go
+func main() {
+	r := gin.Default()
+	jm := jwtutil.NewJWTManager("my-secret-key", 24*time.Hour, "auth_token")
+
+	auth := r.Group("/user")
+	auth.Use(AuthMiddleware(jm))
+	{
+		auth.GET("/profile", func(c *gin.Context) {
+			claims := c.MustGet("claims").(map[string]interface{})
+			c.JSON(200, gin.H{
+				"user_id": claims["user_id"],
+				"role":    claims["role"],
+			})
+		})
+	}
+
+	r.Run(":8080")
+}
+```
+
+---
+
+### 如何在业务中使用 Claims？
+
+Gin 的 `c.Set()` 可以传递任意内容，你只要取出即可：
+
+```go
+claims := c.MustGet("claims").(map[string]interface{})
+userID := int(claims["user_id"].(float64))
+```
+
+JWT 的数字类型默认解析为 `float64`，这属于标准库行为，不是 bug。
+
+
+## 使用建议
+
+* **Secret 需要足够复杂**，避免暴力破解
+* 生产环境建议将 `Secure` 设置为 `true`（强制 HTTPS）
+* Claims 可根据业务扩展，如 `user_id`、`roles`、`permissions`
+* Cookie 模式适用于前后端分离但需要保持安全性的登录场景
+
+
 # LimiterUtil
 
 `LimiterUtil` 是一个基于 Go 的泛型限流库，集成了 **双/三桶限流**、**队列排队**、**熔断机制** 和 **失败重试控制**。适用于高并发场景下对任务执行速率和稳定性进行控制。
